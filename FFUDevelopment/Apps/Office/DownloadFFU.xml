@@ -1,6 +1,6 @@
 <Configuration ID="445c9fbf-102a-4b73-bb3c-72bf4957876c">
   <Info Description="" />
-  <Add OfficeClientEdition="64" Channel="MonthlyEnterprise" MigrateArch="TRUE">
+  <Add OfficeClientEdition="64" Channel="MonthlyEnterprise" SourcePath="C:\FFUDevelopment\Apps\Office" AllowCdnFallback="TRUE" MigrateArch="TRUE">
     <Product ID="O365ProPlusRetail">
       <Language ID="en-us" />
       <Language ID="MatchPreviousMSI" />
