@@ -1,12 +1,113 @@
 # Using Full Flash Update (FFU) files to speed up Windows deployment
 
-This repo contains the full FFU process that we use in US Education at Microsoft to help customers with large deployments of Windows as they prepare for the new school year. This process isn't limited to only large deployments at the start of the year, but is the most common.
+This repo contains the full FFU process that we use at Central Bucks School District to assist us in maintaining over 19k windows devices. This process isn't limited to only large deployments; we use it daily to support our fleet.
 
 This process will copy Windows in about 2-3 minutes to the target device, optionally Install drivers, provisioning packages, Autopilot, etc. School technicians have even given the USB sticks to teachers and teachers calling them their "Magic USB sticks" to quickly get student devices reimaged in the event of an issue with their Windows PC.
 
-While we use this in Education at Microsoft, other industries can use it as well. We esepcially see a need for something like this with partners who do re-imaging on behalf of customers. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
+While this is used for Education at Microsoft, other industries can use it as well. The difference in Education is that they typically have large deployments that tend to happen at the beginning of the school year and any amount of time saved is helpful. Microsoft Deployment Toolkit, Configuration Manager, and other community solutions are all great solutions, but are typically slower due to WIM deployments being file-based while FFU files are sector-based.
 
+My goal in adding all of this functionality was to make it easier to adjust what the script does and put it in a scheduled task that runs once a month. So we always have an updated image that just needs to be tested on some devices.
+
+![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/0475889a-6a1e-4ac1-9026-7fdddb52e2c2)
+
+# Instructions
+### Edit the config.ini file to adjust what features your full flash update image will have.
+### Any bool field left blank in the config.ini file will be considered false.
+  1 = $True | 0 = $False
+  
+  **Config.ini**
+| Parameter            | Type | Description                                                                                                                                                              |
+| -------------------- | ---- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| ISOPath        | String | When left blank downloads latest ESD from Microsoft or Install ESD provided at ESDPath. do not use quotes: **C:\FFUDevelopment\Win11_22H2_English_x64.iso**                             |
+| ESDPath            | String | When left blsnk downloads latest ESD from Microsoft. if path to ESD is provided offline ESD will be used do not use quotes: **C:\FFUDevelopment\Windows11.esd**                  |
+| WindowsSKU       | String | Edition of Windows 10/11 to be installed, e.g., accepted values are: 'Home', 'Home N', 'Home Single Language', 'Education', 'Education N', 'Pro', 'Pro N', 'Pro Education', 'Pro Education N', 'Pro for Workstations', 'Pro N for Workstations', 'Enterprise', 'Enterprise N'. Do not use Single quotes.  
+| WindowsRelease       | Integer | Integer value of 10 or 11. This is used to identify which release of Windows to download. Default is 11.  |
+| WindowsVersion      | String | String value of the Windows version to download. This is used to identify which version of Windows to download. Default is 23H2.    |
+| WindowsArch | String | String value of x86 or x64. This is used to identify which architecture of Windows to download. Default is x64.    |
+| WindowsLang           | String | String value in language-region format (e.g. en-us). This is used to identify which language of media to download. Default is en-us.       |
+| MediaType       | String | String value of either business or consumer. This is used to identify which media type to download. Default is consumer. |
+| DisableAutoPlay             | Bool | When set to 1, Will disable autoplay in the windows registry and re-enable after script is complete. This prevents file explorer from opening multiple windows with **Location not available** errors when create new partitions. Default is 0       |
+| CompactOS         | Bool | When set to 1, will compact the OS when building the FFU. Default is 1.                                 |
+| UpdateLatestCU        | Bool | When set to 1, will download and install the latest cumulative update for Windows 10/11. Default is 0.                                 |
+| UpdateLatestNet            | Bool | When set to 1, will download and install the latest .NET Framework for Windows 10/11. Default is 0.     |
+| OptionalFeatures    | String | Provide a semi-colon separated list of Windows optional features you want to include in the FFU (e.g. netfx3;TFTP). NOTE: **Cannot enable netfx3 when ESD is used**  |
+| ProductKey     | String | Product key for the Windows 10/11 edition specified in WindowsSKU. This will overwrite whatever SKU is entered for WindowsSKU. Recommended to use if you want to use a MAK or KMS key to activate Enterprise or Education. If using VL media instead of consumer media, you'll want to enter a MAK or KMS key here.                         |
+| VMLocation       | String | Default is $FFUDevelopmentPath\VM. This is the location of the VHDX that gets created where Windows will be installed to.                    |
+| FFUPrefix   | String | Prefix for the generated FFU file. Default is _FFU.                               |
+| ShareName            | String | Name of the shared folder for FFU capture. The default is FFUCaptureShare. This share will be created with rights for the user account. When finished, the share will be removed.                       |
+| Username       | String | Username for accessing the shared folder. The default is ffu_user. The script will auto create the account and password. When finished, it will remove the account.                     |
+| Memory       | Integer | Amount of memory to allocate for the virtual machine. Recommended to use 8GB if possible, especially for Windows 11. Use 4GB if necesary.                     |
+| Disksize        | Integer | Size of the virtual hard disk for the virtual machine. Default is a 30GB dynamic disk.                               |
+| Processors            | Integer | Number of virtual processors for the virtual machine. Recommended to use at least 4.                       |
+| VMSwitchName       | String | Name of the Hyper-V virtual switch. If $InstallApps is set to $true, this must be set. This is required to capture the FFU from the VM. The default is *external*, but you will likely need to change this.   |
+| VMHostIPAddress      | String | IP address of the Hyper-V host for FFU capture. **If $InstallApps is set to 1, this parameter must be configured**. You must manually configure this. The script will not auto detect your IP (depending on your network adapters, it may not find the correct IP). |
+| LogicalSectorSizeBytes | Integer | Unit32 value of 512 or 4096. Not recommended to change from 512. Might be useful for 4kn drives, but needs more testing. Default is 512. 
+| Installapps | Bool |When set to 1, the script will create an Apps.iso file from the $FFUDevelopmentPath\Apps folder. It will also create a VM, mount the Apps.ISO, install the Apps, sysprep, and capture the VM. When set to 0, the FFU is created from a VHDX file. No VM is created. |
+| InstallOffice           | Bool | Install Microsoft Office if set to 1. The script will download the latest ODT and Office files in the $FFUDevelopmentPath\Apps\Office folder and install Office in the FFU via VM. Default is 0  |
+| InstallDrivers       | Bool | Install device drivers from the specified $FFUDevelopmentPath\Drivers folder if set to 1. Download the drivers and put them in the Drivers folder. The script will recurse the drivers folder and add the drivers to the FFU. Default is 0  |
+| UpdateEdge             | Bool | When set to 1, will download and install the latest Microsoft Edge for Windows 10/11. Default is 0.        |
+| UpdateLatestDefender         | Bool | When set to 1, will download and install the latest Windows Defender definitions and Defender platform update. Default is 0.                                  |
+| UpdateOneDrive        | Bool | When set to 1, will download and install the latest OneDrive for Windows 10/11 and install it as a per machine installation instead of per user. Default is 0.                                 |
+| UpdateWinGet            | Bool | When set to 1, will update WinGet to the latest version available. Default is 0.                                                                                         |
+| InstallRedistributables    | Bool | When set to 1, download and install latest version of visual C++ reditributables for x86 and x64. Default is 0.                                                                 |
+| InstallTeams     | Bool | When set to 1, will download and install latest version of New Teams x64. Default is 0.                                                              |
+| CopyDrivers       | Bool | When set to 1, will copy the drivers from the $FFUDevelopmentPath\Drivers folder to the Drivers folder on the deploy partition of the USB drive. Default is 0. 
+| CopyPEDrivers           | Bool | When set to 1, will copy the drivers from the $FFUDevelopmentPath\PEDrivers folder to the WinPE deployment media. Default is 0.  |
+| CreateCaptureMedia       | Bool | When set to 1, this will create WinPE capture media for use when $InstallApps is set to 1. This capture media will be automatically attached to the VM and the boot order will be changed to automate the capture of the FFU. Default is 1 |
+| FFUCaptureLocation             | String | Path to the folder where the captured FFU will be stored. Default is $FFUDevelopmentPath\FFU if not path is specified |
+| CreateDeploymentMedia         | Bool | When set to $true, this will create WinPE deployment media for use when deploying to a physical device.                                  |
+| ImageAgeLimit        | Integer | Image age limit is the time days you want FFU images to be valid for. Any image older than what is set here will not show as available on the apply image tool. Default is 60.                                 |
+| BuildUSBDrive            | Bool | When set to 1, will partition and format a USB drive and copy the captured FFU to the drive. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward. Default is 0|
+| CopyPPKG    | Bool | When set to 1, will copy the provisioning package from the $FFUDevelopmentPath\PPKG folder to the Deployment partition of the USB drive. Default is 0.                                                                 |
+| CopyUnattend     | Bool | When set to 1, will copy the $FFUDevelopmentPath\Unattend folder to the Deployment partition of the USB drive. Default is 0.                                                              |
+| CopyAutopilot       | Bool | When set to 1, will copy the $FFUDevelopmentPath\Autopilot folder to the Deployment partition of the USB drive. Default is 0.
+| CleanupCaptureISO    | Bool | When set to 1, will remove the WinPE capture ISO after the FFU has been captured. Default is 0.  |
+| CleanupCaptureShare     | Bool | When set to 1, will remove FFU capture share used to capture images to a local drive. Default is 1.            |
+| CleanupDeployISO    | Bool | When set to 1, will remove the WinPE deployment ISO after the FFU has been captured. Default is 0.  |
+| CleanupAppsISO       | Bool | When set to 1, will remove the Apps ISO after the FFU has been captured. Default is 1.
+| Optimize     | Bool | When set to 1, will optimize the FFU file. Default is 1. |
+| RemoveVM     | Bool | When set to 1, will remove the VM created from this script. Default is 1. |
+| RemoveFFU       | Bool | When set to 1, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is 0.
+## Then run the script
+    .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
 # Updates
+### **2024.6**
+
+**BuildFFUVM.ps1**
+
+- Rebuilt how the scripts many switches (50) are utilized with a config.ini file. 1 is True, 0 is False. All file paths must be **without** starting and ending quotes.
+- Added Clear-InstallAppsandSysprep function to Get-FFUEnvironment function.
+- Added code to download the latest Winget package manager.
+- Added code to install the latest Winget package manager to the InstallAppsandSysprep.cmd.
+- Added code to download the latest Visual C++ Redistributables.
+- Added code to install the latest latest Visual C++ Redistributables to the InstallAppsandSysprep.cmd
+- Added code to download and install the latest version of Teams.
+- Added code to install the latest version of Teams to the InstallAppsandSysprep.cmd
+- Added code to auto generate InstallAppsandSysprep.cmd if it is not present.
+- Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
+- Added code to reference the images age limit set in the config.ini file
+- Replaced Invoke-WebRequest with Start-BitsTrasfer for all large file downloads.
+- Added code to disable autoplay in the windows registry while the script runs and re-enables it when the script completes. this is to prevent "Location not available" errors to prevent many file explorer windows from opening automatically when creating new partitions while the script is running.
+- Added code so FFUCaptureLocation can be specified in config.ini file.
+  
+**BuildUSBDrives.ps1**
+- Added code to build a diskpart.txt script for formating volumes and use it to build usb drives.
+- Added code to close all file explorer windows related to this tool when building usb drives is completed.
+- An option has been added to choose either one or all USB drives that are currently inserted.
+- Simultaneous creation of multiple drives is supported, which significantly reduces the time required. For instance, the time required to create three 128GB drives is reduced from 21 minutes to approximately 8-9 minutes, depending on the USB specification, USB controller, and USB drive write speed.
+- A progress bar has been added. It advances in segments, so it may appear to be frozen at times, but it is functioning correctly. Please be patient while it progresses.
+- During the creation of the USB drives, image and driver files are automatically copied to the drives. If the Images and Drivers folders exist in the same folder as the CBSD IT-Base-June2024.iso file and contain files, those folders will also be copied to the USB drives.
+  
+**CaptureFFU.ps1**
+- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
+  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
+
+**ApplyFFU.ps1**
+- Added code to only show images updated within the number of days set for ImageAgeLimit in the config.ini file.
+
+**Known Issues**
+- No issues currently known. still needs more validation that all of the config file switches work properly with the config.ini file.
+
 ### **2024.5**
  
 **BuildFFUVM.ps1**
@@ -16,8 +117,8 @@ While we use this in Education at Microsoft, other industries can use it as well
 - Added code to preserve the specified language folder when other languages are being utilized.
   - When a language other than en-us is specified; all other unused folders including en-us are cleared out and the specified language folder is preserved.
 - Added code that creates an Images and Drivers folder on the root of the .iso.
-- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
-  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
+- 
+  
 
 **ApplyFFU.ps1**
 - Removed driver selection menu in place of auto installing drivers based off of the model number. (Lenovo model types are truncated down to the first 4 charactars)
@@ -25,6 +126,8 @@ While we use this in Education at Microsoft, other industries can use it as well
 - Added code for detecting wether a main drive is available to apply the OS to. If the drive isn't detected the console will show red (shown below)
 - Added code that looks to \Images for device images.
 - Added code that looks to \Drivers for device drivers
+- Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
+  - Startnet.cmd works fine however winpeshl.ini is a different approch that only loads the powershell script. | https://learn.microsoft.com/en-us/windows-hardware/manufacture/desktop/winpeshlini-reference-launching-an-app-when-winpe-starts?view=windows-11
 - Added code to display device information:
   - System Time
   - Serial Number
@@ -39,6 +142,7 @@ While we use this in Education at Microsoft, other industries can use it as well
  - Added warning that all currently connected USB flash drives will be erased
  - Build flash drives from deployment .iso files created by BuildFFUVM.ps1
 
+  
 **Everything below was developed by Microsoft:**
 - https://github.com/zehadialam
 - https://github.com/JoeMama54
