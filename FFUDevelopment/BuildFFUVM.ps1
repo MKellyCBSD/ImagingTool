@@ -161,6 +161,9 @@ Command line for those who want to download the latest Windows 11 Pro x64 media 
 Command line for those who want to download the latest Windows 11 Pro x64 media in English (US) and install the latest version of Office and drivers.
 .\BuildFFUVM.ps1 -WindowsSKU 'Pro' -Installapps $true -InstallOffice $true -InstallDrivers $true -VMSwitchName 'Name of your VM Switch in Hyper-V' -VMHostIPAddress 'Your IP Address' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $true -verbose
 
+Command line for those who just want a FFU With windows defender updated, no Office and have downloaded their own ISO. This is the one of the quicker options. This also leaves the deployment .iso for later use.
+.\BuildFFUVM.ps1 -ISOPath 'C:\FFUDevelopment\Win11_22H2_English_x64v2.iso' -WindowsSKU 'Education' -Installapps $True -InstallOffice $false -InstallDrivers $False -VMSwitchName 'Virtual Switch' -VMHostIPAddress '192.168.86.47' -CreateCaptureMedia $true -CreateDeploymentMedia $true -BuildUSBDrive $False -CleanupCaptureISO $false -CleanupDeployISO $false -compactos $false -UpdateLatestDefender $true -verbose
+
 .NOTES
     Additional notes about your script.
 
@@ -283,7 +286,7 @@ param(
     [bool]$CleanupDeployISO = $true,
     [bool]$CleanupAppsISO = $true
 )
-$version = '2405.1'
+$version = '2404.2'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
@@ -321,6 +324,7 @@ if (-not $KBPath) { $KBPath = "$FFUDevelopmentPath\KB" }
 if (-not $DefenderPath) { $DefenderPath = "$AppsPath\Defender" }
 if (-not $OneDrivePath) { $OneDrivePath = "$AppsPath\OneDrive" }
 if (-not $EdgePath) { $EdgePath = "$AppsPath\Edge" }
+if (-not $Date) {$Date = get-date -UFormat %Y-%m }
 
 #FUNCTIONS
 function WriteLog($LogText) { 
@@ -813,7 +817,7 @@ function Get-KBLink {
         [Parameter(Mandatory)]
         [string]$Name
     )
-    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=$Name"
+    $results = Invoke-WebRequest -Uri "http://www.catalog.update.microsoft.com/Search.aspx?q=`"$Name`""
     $kbids = $results.InputFields |
     Where-Object { $_.type -eq 'Button' -and $_.Value -eq 'Download' } |
     Select-Object -ExpandProperty  ID
@@ -1359,21 +1363,42 @@ function New-PEMedia {
     #Need to use the Demployment and Imaging tools environment to create winPE media
     $DandIEnv = "$adkPath`Assessment and Deployment Kit\Deployment Tools\DandISetEnv.bat"
     $WinPEFFUPath = "$FFUDevelopmentPath\WinPE"
-
+     $WinPEFFUMedia = "$WinPEFFUPath\Media"
     If (Test-path -Path "$WinPEFFUPath") {
         WriteLog "Removing old WinPE path at $WinPEFFUPath"
         Remove-Item -Path "$WinPEFFUPath" -Recurse -Force | out-null
     }
 
-    WriteLog "Copying WinPE files to $WinPEFFUPath"
+    WriteLog "Copying WinPE files to $WinPEFFUPath" 
     & cmd /c """$DandIEnv"" && copype amd64 $WinPEFFUPath" | Out-Null
     #Invoke-Process cmd "/c ""$DandIEnv"" && copype amd64 $WinPEFFUPath"
+    #$WindowsLang = "fr-ca"
     WriteLog 'Files copied successfully'
-
-    WriteLog 'Mounting WinPE media to add WinPE optional components'
+    if($WindowsLang -eq 'en-us'){
+        WriteLog "if default (En-US) Clean up unused language folders from WinPE media folder"
+        $UnusedFolder = Get-ChildItem -Path "$WinPEFFUMedia" -Directory | Where-Object {$_.Name -like "*-*"}
+        #$count = 0
+        foreach($folder in $UnusedFolder){
+        #$folder.name
+        remove-item -Path $folder.fullname -Force -Confirm: $false -Recurse
+        }
+    }else{
+        WriteLog "Cleanup all language folders except $WindowsLang"
+        $UnusedFolder = Get-ChildItem -Path "$WinPEFFUMedia" -Directory | Where-Object {$_.Name -like "*-*" -and $_.Name -notmatch $WindowsLang}
+        #$count = 0
+        foreach($folder in $UnusedFolder){
+        #$folder.name
+        remove-item -Path $folder.fullname -Force -Confirm: $false -Recurse
+        }
+    }
+    #WriteLog "Create images directory"
+    #New-Item -Path $WinPEFFUMedia -Name Images -ItemType Directory -Force -Confirm: $false
+    #WriteLog "Make drivers directory"
+    #New-Item -Path $WinPEFFUMedia -Name Drivers -ItemType Directory -Force -Confirm: $false
+    #WriteLog 'Mounting WinPE media to add WinPE optional components'
     Mount-WindowsImage -ImagePath "$WinPEFFUPath\media\sources\boot.wim" -Index 1 -Path "$WinPEFFUPath\mount" | Out-Null
     WriteLog 'Mounting complete'
-
+    
     $Packages = @(
         "WinPE-WMI.cab",
         "en-us\WinPE-WMI_en-us.cab",
@@ -1438,31 +1463,6 @@ function New-PEMedia {
     Remove-Item -Path "$WinPEFFUPath" -Recurse -Force
     WriteLog 'Cleanup complete'
 }
-
-function Optimize-FFUCaptureDrive {
-    param (
-        [string]$VhdxPath
-    )
-    try {
-        WriteLog 'Mounting VHDX for volume optimization'
-        Mount-VHD -Path $VhdxPath
-        WriteLog 'Defragmenting Windows partition...'
-        Optimize-Volume -DriveLetter W -Defrag -NormalPriority -Verbose
-        WriteLog 'Performing slab consolidation on Windows partition...'
-        Optimize-Volume -DriveLetter W -SlabConsolidate -NormalPriority -Verbose
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VhdxPath
-        WriteLog 'Mounting VHDX as read-only for optimization'
-        Mount-VHD -Path $VhdxPath -NoDriveLetter -ReadOnly
-        WriteLog 'Optimizing VHDX in full mode...'
-        Optimize-VHD -Path $VhdxPath -Mode Full
-        WriteLog 'Dismounting VHDX'
-        Dismount-ScratchVhdx -VhdxPath $VhdxPath
-    } catch {
-        throw $_
-    }
-}
-
 function New-FFU {
     param (
         [Parameter(Mandatory = $false)]
@@ -1753,24 +1753,30 @@ Function New-DeploymentUSB {
         Invoke-Command -ScriptBlock $ScriptBlock -ArgumentList $DiskNumber | Out-null
         WriteLog 'Done'
 
+        $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $BootPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempBoot' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
         $ISOMountPoint = (Mount-DiskImage -ImagePath $DeployISO -PassThru | Get-Volume).DriveLetter + ":\"
         WriteLog "Copying WinPE files to $BootPartitionDriveLetter"
         robocopy "$ISOMountPoint" "$BootPartitionDriveLetter" /E /COPYALL /R:5 /W:5 /J
         Dismount-DiskImage -ImagePath $DeployISO | Out-Null
+        
+        WriteLog "Create images directory"
+        New-Item -Path $DeployPartitionDriveLetter -Name Images -ItemType Directory -Force -Confirm: $false
+        WriteLog "Make drivers directory"
+        New-Item -Path $DeployPartitionDriveLetter -Name Drivers -ItemType Directory -Force -Confirm: $false
 
         if ($CopyFFU.IsPresent) {
             if ($null -ne $SelectedFFUFile) {
-                $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
+               # $DeployPartitionDriveLetter = (Get-WmiObject -Class win32_volume -Filter "Label='TempDeploy' AND DriveType=2 AND DriveLetter IS NOT NULL").Name
                 if ($SelectedFFUFile -is [array]) {
                     WriteLog "Copying multiple FFU files to $DeployPartitionDriveLetter. This could take a few minutes."
                     foreach ($FFUFile in $SelectedFFUFile) {
-                        robocopy $(Split-Path $FFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+                        robocopy $(Split-Path $FFUFile -Parent) "$DeployPartitionDriveLetter\Images" $(Split-Path $FFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                     }
                 }
                 else {
                     WriteLog ("Copying " + $SelectedFFUFile + " to $DeployPartitionDriveLetter. This could take a few minutes.")
-                    robocopy $(Split-Path $SelectedFFUFile -Parent) $DeployPartitionDriveLetter $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
+                    robocopy $(Split-Path $SelectedFFUFile -Parent) "$DeployPartitionDriveLetter\Images" $(Split-Path $SelectedFFUFile -Leaf) /COPYALL /R:5 /W:5 /J
                 }
                 #Copy drivers using robocopy due to potential size
                 if ($CopyDrivers) {
@@ -2064,7 +2070,7 @@ if ($InstallApps) {
         #Update Latest Defender Platform and Definitions - these can't be serviced into the VHDX, will be saved to AppsPath
         if ($UpdateLatestDefender) {
             WriteLog "`$UpdateLatestDefender is set to true, checking for latest Defender Platform and Definitions"
-            $Name = "Update for Microsoft Defender Antivirus antimalware platform"
+            $Name = 'Update for Microsoft Defender Antivirus antimalware platform'
             #Check if $DefenderPath exists, if not, create it
             If (-not (Test-Path -Path $DefenderPath)) {
                 WriteLog "Creating $DefenderPath"
@@ -2129,7 +2135,7 @@ if ($InstallApps) {
             $OneDriveURL = 'https://go.microsoft.com/fwlink/?linkid=844652'
             try {
                 Start-BitsTransfer -Source $OneDriveURL -Destination "$OneDrivePath\OneDriveSetup.exe"
-                WriteLog "OneDrive client downloaded to $OneDrivePath\OneDriveSetup.exe"
+                WriteLog "Defender Definitions downloaded to $OneDrivePath\OneDriveSetup.exe"
             }
             catch {
                 Write-Host "Downloading OneDrive client Failed"
@@ -2221,7 +2227,7 @@ try {
     #The Windows release info page is updated later than the MU Catalog
     if ($UpdateLatestCU) {
         Writelog "`$UpdateLatestCU is set to true, checking for latest CU"
-        $Name = """Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"""
+        $Name = "Cumulative update for Windows $WindowsRelease Version $WindowsVersion for $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -2236,7 +2242,7 @@ try {
     #Update Latest .NET Framework
     if ($UpdateLatestNet) {
         Writelog "`$UpdateLatestNet is set to true, checking for latest .NET Framework"
-        $Name = "Cumulative update for .net framework windows $WindowsRelease $WindowsVersion $WindowsArch -preview"
+        $Name = "Cumulative Update for .NET Framework 3.5 and 4.8.1 for Windows $WindowsRelease, version $WindowsVersion for $WindowsArch"
         #Check if $KBPath exists, if not, create it
         If (-not (Test-Path -Path $KBPath)) {
             WriteLog "Creating $KBPath"
@@ -2265,13 +2271,10 @@ try {
     if ($UpdateLatestCU -or $UpdateLatestNet) {
         try {
             WriteLog "Adding KBs to $WindowsPartition"
-            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath -PreventPending | Out-Null
+            Add-WindowsPackage -Path $WindowsPartition -PackagePath $KBPath | Out-Null
             WriteLog "KBs added to $WindowsPartition"
             WriteLog "Removing $KBPath"
             Remove-Item -Path $KBPath -Recurse -Force | Out-Null
-	        WriteLog "Clean Up the WinSxS Folder"
-            Invoke-Process cmd "/c ""$DandIEnv"" && Dism /Image:$WindowsPartition /Cleanup-Image /StartComponentCleanup /ResetBase" | Out-Null
-            WriteLog "Clean Up the WinSxS Folder completed"
         }
         catch {
             Write-Host "Adding KB to VHDX failed with error $_"
@@ -2392,7 +2395,6 @@ try {
             WriteLog 'Waiting for VM to shutdown'
         } while ($FFUVM.State -ne 'Off')
         WriteLog 'VM Shutdown'
-        Optimize-FFUCaptureDrive -VhdxPath $VHDXPath
         #Capture FFU file
         New-FFU $FFUVM.Name
     }
