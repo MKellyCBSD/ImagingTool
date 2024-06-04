@@ -91,7 +91,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 - Added code so FFUCaptureLocation can be specified in config.ini file.
   
 **BuildUSBDrives.ps1**
-- Added code to disable WIndows autoplay in the registry to prevent multiple File explorer windows with disk access errors during disk partitioning.
+- Added code to disable windows autoplay in the registry to prevent multiple file explorer windows from opening with disk access errors during disk partitioning.
 - An option has been added to choose either one or all USB drives that are currently inserted.
 - Simultaneous creation of multiple drives is supported, which significantly reduces the time required. For instance, the time required to create three 128GB drives is reduced from 21 minutes to approximately 8-9 minutes, depending on the USB specification, USB controller, and USB drive write speed.
 - A progress bar has been added. It advances in segments, so it may appear to be frozen at times, but it is functioning correctly. Please be patient while it progresses.
