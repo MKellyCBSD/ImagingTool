@@ -8,7 +8,7 @@ While this is used for Education at Microsoft, other industries can use it as we
 
 My goal in adding all of this functionality was to make it easier to adjust what the script does and put it in a scheduled task that runs once a month. So we always have an updated image that just needs to be tested on some devices.
 
-![image](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/0475889a-6a1e-4ac1-9026-7fdddb52e2c2)
+![IMG_3784](https://github.com/MKellyCBSD/ImagingTool/assets/167896478/243c60dd-d098-4eb7-86f7-4ddbacc635cb)
 
 # Instructions
 ### Edit the config.ini file to adjust what features your full flash update image will have.
