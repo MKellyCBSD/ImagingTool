@@ -86,7 +86,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 - Added code to auto generate InstallAppsandSysprep.cmd if it is not present.
 - Moved the dism clean up of the WinSxS folder to the scratch vhdx. This makes the final FFU file smaller (reduced ~650MB).
 - Added code to reference the images age limit set in the config.ini file
-- Replaced Invoke-WebRequest with Start-BitsTrasfer for all large file downloads.
+- Replaced Invoke-WebRequest with Start-BitsTransfer for all large file downloads.
 - Added code to disable autoplay in the windows registry while the script runs and re-enables it when the script completes. this is to prevent "Location not available" errors to prevent many file explorer windows from opening automatically when creating new partitions while the script is running.
 - Added code so FFUCaptureLocation can be specified in config.ini file.
   
@@ -96,7 +96,7 @@ My goal in adding all of this functionality was to make it easier to adjust what
 - An option has been added to choose either one or all USB drives that are currently inserted.
 - Simultaneous creation of multiple drives is supported, which significantly reduces the time required. For instance, the time required to create three 128GB drives is reduced from 21 minutes to approximately 8-9 minutes, depending on the USB specification, USB controller, and USB drive write speed.
 - A progress bar has been added. It advances in segments, so it may appear to be frozen at times, but it is functioning correctly. Please be patient while it progresses.
-- During the creation of the USB drives, image and driver files are automatically copied to the drives. If the Images and Drivers folders exist in the same folder as the CBSD IT-Base-June2024.iso file and contain files, those folders will also be copied to the USB drives.
+- During the creation of the USB drives, image and driver files are automatically copied to the drives. If the Images and Drivers folders exist in the same folder as the Deployment.iso file and contain files, those folders will also be copied to the USB drives.
   
 **CaptureFFU.ps1**
 - Removed startnet.cmd and switched to winpeshl.ini for launching the capture and deployment scripts.
