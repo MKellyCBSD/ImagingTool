@@ -872,8 +872,8 @@ function Get-Office {
     $ODTUrl = Get-ODTURL
     $ODTInstallFile = "$env:TEMP\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
-    #Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
-    Start-BitsTransfer -Source $ODTUrl -Description $ODTInstallFile
+    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
+    #Start-BitsTransfer -Source $ODTUrl -Description $ODTInstallFile
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
     # Start-Process -FilePath $ODTInstallFile -ArgumentList "/extract:$OfficePath /quiet" -Wait
