@@ -68,9 +68,16 @@ My goal in adding all of this functionality was to make it easier to adjust what
 | Optimize     | Bool | When set to 1, will optimize the FFU file. Default is 1. |
 | RemoveVM     | Bool | When set to 1, will remove the VM created from this script. Default is 1. |
 | RemoveFFU       | Bool | When set to 1, will remove the FFU file from the $FFUDevelopmentPath\FFU folder after it has been copied to the USB drive. Default is 0.
+| UpdateADK       | Bool | When set to 1, will check for and install updates to the Windows ADK if available.
 ## Then run the script
     .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
 # Updates
+### **2024.6.1**
+
+**BuildFFUVM.ps1**
+- Reverted the Get-Office function back to using **Invoke-WebRequest** due to an error.
+- Added the **UpdateADK** switch to allow the option to disable checking for updates to the Windows ADK
+
 ### **2024.6**
 
 **BuildFFUVM.ps1**
