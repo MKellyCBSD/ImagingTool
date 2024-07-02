@@ -317,7 +317,7 @@ Function Build-FFU {
     [bool]$CaptureFFU = [int]$Config['CaptureFFU']
    
 )
-$version = '2024.6'
+$version = '2024.6.1'
 
 #Check if Hyper-V feature is installed (requires only checks the module)
 $osInfo = Get-WmiObject -Class Win32_OperatingSystem
