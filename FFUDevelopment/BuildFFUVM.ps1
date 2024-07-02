@@ -311,7 +311,10 @@ Function Build-FFU {
     [bool]$DisableAutoPlay = [int]$Config['DisableAutoPlay'],
     [string]$ESDPath =  $Config['ESDPath'],
     [bool]$CleanupCaptureShare = [int]$Config['CleanupCaptureShare'],
-    [bool]$RemoveVM = [int]$Config['RemoveVM']
+    [bool]$RemoveVM = [int]$Config['RemoveVM'],
+    [bool]$UpdateADK = [int]$Config['UpdateADK'],
+    [bool]$CaptureWIM = [int]$Config['CaptureWIM'],
+    [bool]$CaptureFFU = [int]$Config['CaptureFFU']
    
 )
 $version = '2024.6'
@@ -603,6 +606,7 @@ function Install-ADK {
         $installerLocation = Join-Path $env:TEMP $installer
 
         WriteLog "Downloading $ADKOption from $ADKUrl to $installerLocation"
+
         Start-BitsTransfer -Source $ADKUrl -Destination $installerLocation -ErrorAction Stop
         WriteLog "$ADKOption downloaded to $installerLocation"
         
@@ -731,6 +735,7 @@ function Get-ADK {
     $latestWinPEInstalled = Confirm-ADKVersionIsLatest -ADKOption "WinPE add-on"
 
     # Uninstall older versions and install latest versions if necessary
+    if($UpdateADK){
     if (-not $latestADKInstalled) {
         Uninstall-ADK -ADKOption "Windows ADK"
         Install-ADK -ADKOption "Windows ADK"
@@ -740,7 +745,7 @@ function Get-ADK {
         Uninstall-ADK -ADKOption "WinPE add-on"
         Install-ADK -ADKOption "WinPE add-on"
     }
-
+    }
     # Define registry path
     $adkPathKey = "HKLM:\SOFTWARE\WOW6432Node\Microsoft\Windows Kits\Installed Roots"
     $adkPathName = "KitsRoot10"
@@ -872,8 +877,9 @@ function Get-Office {
     $ODTUrl = Get-ODTURL
     $ODTInstallFile = "$env:TEMP\odtsetup.exe"
     WriteLog "Downloading Office Deployment Toolkit from $ODTUrl to $ODTInstallFile"
-    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile
+    Invoke-WebRequest -Uri $ODTUrl -OutFile $ODTInstallFile -UseBasicParsing
     #Start-BitsTransfer -Source $ODTUrl -Description $ODTInstallFile
+
     # Extract ODT
     WriteLog "Extracting ODT to $OfficePath"
     # Start-Process -FilePath $ODTInstallFile -ArgumentList "/extract:$OfficePath /quiet" -Wait
@@ -1628,6 +1634,7 @@ function New-FFU {
         $FFUFile = "$FFUCaptureLocation\$FFUFileName"
         #Capture the FFU
         Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
+        Invoke-Process cmd "/c ""$DandIEnv"" && dism /Capture-Image /ImageFile:$WIMFile /CaptureDir:C:\ /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU)"
         # Invoke-Process cmd "/c dism /Capture-FFU /ImageFile:$FFUFile /CaptureDrive:\\.\PhysicalDrive$($vhdxDisk.DiskNumber) /Name:$($winverinfo.Name)$($winverinfo.DisplayVersion)$($winverinfo.SKU) /Compress:Default"
         WriteLog 'FFU Capture complete'
         Dismount-ScratchVhdx -VhdxPath $VHDXPath
@@ -2378,9 +2385,12 @@ if ($InstallApps) {
          }
         $progressPreference = 'silentlyContinue'
         WriteLog "Downloading latest WinGet package manager..."
-        Start-BitsTransfer -Source https://aka.ms/getwinget -Destination "$WinGetPath\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
-        Start-BitsTransfer -Source https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -Destination "$WinGetPath\Microsoft.VCLibs.x64.14.00.Desktop.appx"
-        Start-BitsTransfer -Source https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx -Destination "$WinGetPath\Microsoft.UI.Xaml.2.8.x64.appx"
+        Invoke-WebRequest -Uri "https://aka.ms/getwinget" -OutFile "$WinGetPath\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle" -UseBasicParsing
+        #Start-BitsTransfer -Source https://aka.ms/getwinget -Destination "$WinGetPath\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle"
+        #Start-BitsTransfer -Source https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx -Destination "$WinGetPath\Microsoft.VCLibs.x64.14.00.Desktop.appx"
+        Invoke-WebRequest -Uri "https://aka.ms/Microsoft.VCLibs.x64.14.00.Desktop.appx" -OutFile "$WinGetPath\Microsoft.VCLibs.x64.14.00.Desktop.appx" -UseBasicParsing
+        #Start-BitsTransfer -Source https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx -Destination "$WinGetPath\Microsoft.UI.Xaml.2.8.x64.appx"
+        Invoke-WebRequest -Uri "https://github.com/microsoft/microsoft-ui-xaml/releases/download/v2.8.6/Microsoft.UI.Xaml.2.8.x64.appx" -OutFile "$WinGetPath\Microsoft.UI.Xaml.2.8.x64.appx" -UseBasicParsing
         $CmdContentDesktopAppInstaller = Get-Content -Path "$AppsPath\InstallAppsandSysprep.cmd"
         $UpdatedcmdContentDesktopAppInstaller = $CmdContentDesktopAppInstaller -replace '^(REM Install DesktopAppInstaller)', ("REM Install DesktopAppInstaller`r`nPowershell.exe Add-AppxPackage `"d:\WinGet\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe.msixbundle`"")
         Set-Content -Path "$AppsPath\InstallAppsandSysprep.cmd" -Value $UpdatedcmdContentDesktopAppInstaller
