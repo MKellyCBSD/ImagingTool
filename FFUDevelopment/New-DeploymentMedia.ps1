@@ -3,7 +3,7 @@ param(
     [Parameter(Mandatory = $True, Position = 0)]
     $DeployISOPath
 )
-$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator | 2024.6.1'
+$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator | 2024.7'
 #will partition and format USB drives, copy the captured FFU's and drivers to the USB drives. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
 
 if($DeployISOPath){
