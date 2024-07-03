@@ -72,11 +72,15 @@ My goal in adding all of this functionality was to make it easier to adjust what
 ## Then run the script
     .\BuildFFUVM.ps1 -ConfigPath "C:\FFUDevelopment\Config.ini" -Verbose
 # Updates
-### **2024.6.1**
+### **2024.7**
 
 **BuildFFUVM.ps1**
-- Reverted the Get-Office function back to using **Invoke-WebRequest** due to an error.
+- Reverted the **Get-Office** function back to using **Invoke-WebRequest** to increase reliability.
 - Added the **UpdateADK** switch to allow the option to disable checking for updates to the Windows ADK
+- Reverted the **UpdateWinGet** function back to **Invoke-WebRequest** to increase reliability.
+
+**BuildUSBDrives.ps1**
+- Fixed a bug that caused the script to fail to create an empty drivers folder on the usb drive.
 
 ### **2024.6**
 
