@@ -1,13 +1,10 @@
-$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator | 2024.6'
+[CmdletBinding()]
+param(
+    [Parameter(Mandatory = $True, Position = 0)]
+    $DeployISOPath
+)
+$Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator | 2024.7'
 #will partition and format USB drives, copy the captured FFU's and drivers to the USB drives. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
-Add-Type -AssemblyName System.Windows.Forms
-$FileBrowser = New-Object System.Windows.Forms.OpenFileDialog -Property @{ 
-InitialDirectory = "C:\"
-Filter = 'ISO (*.ISO)|'
-Title = 'Select an .ISO file'
- }
-$null = $FileBrowser.ShowDialog()
-$DeployISOPath = $FileBrowser.FileName
 
 if($DeployISOPath){
 $DevelopmentPath = $DeployISOPath | Split-Path
@@ -30,7 +27,7 @@ function Write-ProgressLog {
       
     }
 Function Get-RemovableDrive {
-writelog "Get information for all drives"
+writelog "Get information for all removable drives"
 $USBDrives = Get-WmiObject Win32_DiskDrive | Where-Object {$_.MediaType -eq "Removable media"} 
 If($USBDrives -and ($null -eq $USBDrives.count)) {
         $USBDrivesCount = 1
@@ -95,7 +92,7 @@ writelog "Get drive letter for all volumes labeled:Deploy"
 $DeployDrives = ($Partitions | Where-Object { $_.FileSystemLabel -eq "Deploy"}).DriveLetter
 writelog "Mount Deployment .iso image"
 $ISOMountPoint = (Mount-DiskImage -ImagePath "$DeployISOPath" -PassThru | Get-Volume).DriveLetter + ":\"
-writelog "Copying boot files to all drives labeled BOOT simultaniously"
+writelog "Copying boot files to all drives labeled BOOT concurrently"
 foreach ($Drive in $BootDrives) {
 $Destination = $Drive + ":\"
     $jobScriptBlock = {
@@ -109,7 +106,7 @@ $Destination = $Drive + ":\"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ISOMountPoint, $Destination | Out-Null
 }
 if($Images){
-writelog "Copying FFU image files to all drives labeled Deploy simultaniously"
+writelog "Copying FFU image files to all drives labeled Deploy concurrently"
 foreach ($Drive in $DeployDrives) {
 $Destination = $Drive+":\Images"
     $jobScriptBlock = {
@@ -132,7 +129,7 @@ if(!($Images)){
         }
 }
 if($Drivers){
-writelog "Copying driver files to all drives labeled Deploy simultaniously"
+writelog "Copying driver files to all drives labeled Deploy concurrently"
 foreach ($Drive in $DeployDrives) {
 $Destination = $Drive+":\Drivers"
     $jobScriptBlock = {
@@ -150,11 +147,12 @@ $Destination = $Drive+":\Drivers"
 if(!($Drivers)){
    foreach ($Drive in $DeployDrives) {
         WriteLog "Create images directory"
-        New-Item -Path "$Drive" -Name Drivers -ItemType Directory -Force -Confirm: $false | Out-Null
+        $drivepath = $Drive+":\"
+        New-Item -Path "$drivepath" -Name Drivers -ItemType Directory -Force -Confirm: $false | Out-Null
         }
 }
 if($DrivesCount -gt 1){
-Write-ProgressLog "Create Imaging Tool" "Building $DrivesCount drives simultaniously...Please be patient..."
+Write-ProgressLog "Create Imaging Tool" "Building $DrivesCount drives concurrently...Please be patient..."
 }else{
 Write-ProgressLog "Create Imaging Tool" "Building the imaging tool on $model...Please be patient..."
 }
