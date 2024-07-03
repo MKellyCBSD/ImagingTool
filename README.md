@@ -85,6 +85,8 @@ My goal in adding all of this functionality was to make it easier to adjust what
 **New-DeploymentMedia.ps1**
 - Introduction of this separate script to create deployment media outside of the BuildFFUVM.ps1 script
 
+      .\New-DeploymentMedia.ps1 -DevelopmentPath C:\FFUDevelopment -DeployISOName WinPE_Deploy.iso
+  
 ### **2024.6**
 
 **BuildFFUVM.ps1**
