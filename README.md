@@ -82,6 +82,9 @@ My goal in adding all of this functionality was to make it easier to adjust what
 **BuildUSBDrives.ps1**
 - Fixed a bug that caused the script to fail to create an empty drivers folder on the usb drive.
 
+**New-DeploymentMedia.ps1**
+- Introduction of this separate script to create deployment media outside of the BuildFFUVM.ps1 script
+
 ### **2024.6**
 
 **BuildFFUVM.ps1**
