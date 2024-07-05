@@ -1,7 +1,7 @@
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $True, Position = 0)]
-    $DeployISOPath
+    $DeployISOPath,
 )
 $Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator'
 #will partition and format USB drives, copy the captured FFU's and drivers to the USB drives. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
@@ -106,9 +106,9 @@ $Destination = $Drive + ":\"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ISOMountPoint, $Destination | Out-Null
 }
 if($Images){
-writelog "Copying FFU image files to all drives labeled Deploy concurrently"
+writelog "Copying FFU image files to all drives labeled deploy concurrently"
 foreach ($Drive in $DeployDrives) {
-$Destination = $Drive+":\Images"
+$Destination = $Drive + ":\Images"
     $jobScriptBlock = {
         param (
             [string]$SFolder,
@@ -125,14 +125,14 @@ $Destination = $Drive+":\Images"
 if(!($Images)){
     foreach ($Drive in $DeployDrives) {
         WriteLog "Create images directory"
-        $drivepath = $Drive+":\"
+        $drivepath = $Drive + ":\"
         New-Item -Path "$drivepath" -Name Images -ItemType Directory -Force -Confirm: $false | Out-Null
         }
 }
 if($Drivers){
-writelog "Copying driver files to all drives labeled Deploy concurrently"
+writelog "Copying driver files to all drives labeled deploy concurrently"
 foreach ($Drive in $DeployDrives) {
-$Destination = $Drive+":\Drivers"
+$Destination = $Drive + ":\Drivers"
     $jobScriptBlock = {
         param (
             [string]$SFolder,
@@ -148,7 +148,7 @@ $Destination = $Drive+":\Drivers"
 if(!($Drivers)){
    foreach ($Drive in $DeployDrives) {
         WriteLog "Create drivers directory"
-        $drivepath = $Drive+":\"
+        $drivepath = $Drive + ":\"
         New-Item -Path "$drivepath" -Name Drivers -ItemType Directory -Force -Confirm: $false | Out-Null
         }
 }
@@ -164,8 +164,8 @@ Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 
 Function New-DeploymentUSB {
     param(
-        [String]$FFUDevelopmentPath = $DevelopmentPath ,
-        [String]$DeployISO =$DeployISOPath,
+        [String]$FFUDevelopmentPath = $DevelopmentPath,
+        [String]$DeployISO = $DeployISOPath,
         [Array]$Drives,
         [int]$Count,
         [String]$FFUPath = "$FFUDevelopmentPath\Images",
@@ -209,7 +209,6 @@ Function New-DeploymentUSB {
     Stop-Process -Name diskpart -ErrorAction SilentlyContinue
     $Selection = $Drivelist[$DriveSelected].Number
     $totalSteps = 5
-    #$startTime = Get-Date
     if($Selection -eq $last){
     Read-Host -Prompt "ALL DRIVES SELECTED! WILL ERASE ALL CURRENTLY CONNECTED USB DRIVES!! Press ENTER to continue"
     Build-DeploymentUSB -Drives $Drives
@@ -233,12 +232,7 @@ $usbDrives,$USBDrivesCount = Get-RemovableDrive
 WriteLog 'Setting first step for percentage progress bar'
 $currentStep = 1 
 New-DeploymentUSB -DeployISO $DeployISOPath -Drives $usbDrives -Count $USBDrivesCount -FFUDevelopmentPath $DevelopmentPath
-#$endTime = Get-Date
-# Calculate duration
-#$duration = $endTime - $startTime
-#Write-Host "Total execution time: $duration"
 read-host -Prompt "USB drive creation complete. Press ENTER to exit"
-WriteLog 'Cleaning up all completed jobs'
 Exit
 }else{
 Write-Host "No .ISO file selected..."
