@@ -52,7 +52,7 @@ Function Build-DeploymentUSB{
             )
             writelog "Creating list of FFU image files"
             $Images = Get-ChildItem -Path $FFUPath -Filter "*.ffu" -File -Recurse
-            writelog "Creating list of driver files"
+            writelog "Checking if drivers are present in the drivers folder"
             $Drivers = Get-ChildItem -Path $DriversPath -Recurse
             $DrivesCount = $Drives.Count
             Write-ProgressLog "Create Imaging Tool" "Creating partitions..."
