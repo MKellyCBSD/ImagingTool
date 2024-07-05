@@ -125,7 +125,8 @@ $Destination = $Drive+":\Images"
 if(!($Images)){
     foreach ($Drive in $DeployDrives) {
         WriteLog "Create images directory"
-        New-Item -Path "$Drive" -Name Images -ItemType Directory -Force -Confirm: $false | Out-Null
+        $drivepath = $Drive+":\"
+        New-Item -Path "$drivepath" -Name Images -ItemType Directory -Force -Confirm: $false | Out-Null
         }
 }
 if($Drivers){
@@ -146,7 +147,7 @@ $Destination = $Drive+":\Drivers"
 }
 if(!($Drivers)){
    foreach ($Drive in $DeployDrives) {
-        WriteLog "Create images directory"
+        WriteLog "Create drivers directory"
         $drivepath = $Drive+":\"
         New-Item -Path "$drivepath" -Name Drivers -ItemType Directory -Force -Confirm: $false | Out-Null
         }
