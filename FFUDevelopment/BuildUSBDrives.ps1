@@ -2,13 +2,13 @@
 param(
     [Parameter(Mandatory = $True, Position = 0)]
     $DeployISOPath,
+    [Switch]$DisableAutoPlay
 )
 $Host.UI.RawUI.WindowTitle = 'Imaging Tool USB Creator'
-#will partition and format USB drives, copy the captured FFU's and drivers to the USB drives. If you'd like to customize the drive to add drivers, provisioning packages, name prefix, etc. You'll need to do that afterward.
 
 if($DeployISOPath){
 $DevelopmentPath = $DeployISOPath | Split-Path
-$ImagesPath = "$DevelopmentPath\Images"
+$ImagesPath = "$DevelopmentPath\FFU"
 function WriteLog($LogText) { 
 $LogFileName = '\Script.log'
 $LogFile = $DevelopmentPath + $LogFilename
@@ -73,12 +73,11 @@ Function Build-DeploymentUSB{
             Format-Volume -Partition $BootPartition -FileSystem FAT32 -NewFileSystemLabel "Boot" -Confirm:$false
             Format-Volume -Partition $DeployPartition -FileSystem NTFS -NewFileSystemLabel "Deploy" -Confirm:$false
         }
-        WriteLog 'Start job to create BOOT and Deploy partitions on each drive'
+        WriteLog "Start job to create BOOT and Deploy partitions on drive number $DriveNumber"
         Start-Job -ScriptBlock $ScriptBlock -ArgumentList $DriveNumber | Out-Null
     }
     writelog "Wait for partitioning jobs to complete"
-    Get-Job | Wait-Job
-    
+    Get-Job | Wait-Job | Out-Null
     if($DrivesCount -gt 1){
     writelog "Get file system information for all drives"
     $Partitions = Get-Partition | Get-Volume
@@ -102,7 +101,7 @@ $Destination = $Drive + ":\"
         )
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
-    WriteLog 'Start copy job to copy all boot files to each drive'
+    WriteLog "Start job to copy all boot files to $Destination"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ISOMountPoint, $Destination | Out-Null
 }
 if($Images){
@@ -118,7 +117,7 @@ $Destination = $Drive + ":\Images"
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
 
-    WriteLog 'Start copy job to copy all FFU files to each drive'
+    WriteLog "Start job to copy all FFU files to $Destination"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $ImagesPath, $Destination | Out-Null
     }
 }
@@ -141,7 +140,7 @@ $Destination = $Drive + ":\Drivers"
         New-Item -Path $DFolder -ItemType Directory -Force -Confirm: $false | Out-Null
         Robocopy $SFolder $DFolder /E /COPYALL /R:5 /W:5 /J
     }
-    WriteLog 'Start copy job to copy all drivers to each drive'
+    WriteLog "Start job to copy all drivers to $Destination"
     Start-Job -ScriptBlock $jobScriptBlock -ArgumentList $DriversPath, $Destination | Out-Null
 }
 }
@@ -157,19 +156,18 @@ Write-ProgressLog "Create Imaging Tool" "Building $DrivesCount drives concurrent
 }else{
 Write-ProgressLog "Create Imaging Tool" "Building the imaging tool on $model...Please be patient..."
 }
-Get-Job | Wait-Job
+Get-Job | Wait-Job | Out-Null
+
 Dismount-DiskImage -ImagePath $DeployISOPath | Out-Null
 Write-ProgressLog "Create Imaging Tool" "Drive creation jobs completed..."
 }
 
 Function New-DeploymentUSB {
     param(
-        [String]$FFUDevelopmentPath = $DevelopmentPath,
-        [String]$DeployISO = $DeployISOPath,
         [Array]$Drives,
         [int]$Count,
-        [String]$FFUPath = "$FFUDevelopmentPath\Images",
-        [String]$DriversPath = "$FFUDevelopmentPath\Drivers"
+        [String]$FFUPath = "$DevelopmentPath\FFU",
+        [String]$DriversPath = "$DevelopmentPath\Drivers"
         
     )
   
@@ -193,16 +191,18 @@ Function New-DeploymentUSB {
             $var = $true
             $DriveSelected = Read-Host 'Enter the drive number to apply the .iso to'
             $DriveSelected = ($DriveSelected -as [int]) -1
-            writelog "drive $DriveSelected selected"
+            writelog "Drive $DriveSelected selected"
             }
 
         catch {
             Write-Host 'Input was not in correct format. Please enter a valid FFU number'
             $var = $false
         }
-    } until (($DriveSelected -le $Count -1 -or $last) -and $var) 
+    } until (($DriveSelected -le $Count -1 -or $last) -and $var)
+    if($DisableAutoPlay){ 
     WriteLog "Setting the registry key to disable autoplay for all drives"
     Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 1 -Type DWORD
+    }
     WriteLog "Closing all MMC windows to prevent drive lock errors"
     Stop-Process -Name mmc -ErrorAction SilentlyContinue
     WriteLog "Closing all Diskpart windows to prevent drive lock errors"
@@ -217,10 +217,12 @@ Function New-DeploymentUSB {
     Build-DeploymentUSB -Drives $Drives[$DriveSelected]
     }
     WriteLog "Setting the registry key to re-enable autoplay for all drives"
+    if($DisableAutoPlay){
     Write-ProgressLog "Create Imaging Tool" "Enabling Autoplay"
     Set-ItemProperty -Path "HKCU:\SOFTWARE\Microsoft\Windows\CurrentVersion\Explorer\AutoplayHandlers" -Name "DisableAutoplay" -Value 0 -Type DWORD
+    }
     Write-ProgressLog "Create Imaging Tool" "Completed!"
- }    
+}    
 #Get USB Drive and create log file
 if(Test-Path "$DevelopmentPath\Script.log"){
 Remove-Item -Path "$DevelopmentPath\Script.log" -Force -Confirm:$false
@@ -228,11 +230,13 @@ New-item -Path $DevelopmentPath -Name 'Script.log' -ItemType "file" -Force | Out
 }
 WriteLog 'Begin Logging'
 WriteLog 'Getting USB drive information and usb drive count'
-$usbDrives,$USBDrivesCount = Get-RemovableDrive
+$USBDrives,$USBDrivesCount = Get-RemovableDrive
 WriteLog 'Setting first step for percentage progress bar'
 $currentStep = 1 
-New-DeploymentUSB -DeployISO $DeployISOPath -Drives $usbDrives -Count $USBDrivesCount -FFUDevelopmentPath $DevelopmentPath
+New-DeploymentUSB -Drives $USBDrives -Count $USBDrivesCount
+
 read-host -Prompt "USB drive creation complete. Press ENTER to exit"
+
 Exit
 }else{
 Write-Host "No .ISO file selected..."
