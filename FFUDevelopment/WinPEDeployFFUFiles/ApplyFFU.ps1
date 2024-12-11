@@ -1,5 +1,41 @@
+$Host.UI.RawUI.WindowTitle = 'Full Flash Update Imaging Tool | 2024.12'
+# 1. v2024.11 | reolves issue that showed no ffu files pressent" when system time is over 60 days off.
+# 2. v2024.12 | Added support to select which hard drive to apply image to in scenarios where there are multiple harddrives present.
+#FUNCTIONS
+#InitializeWinPE
+function Start-Wpeinit {
+    param (
+        [string]$FilePath = "X:\Windows\System32\wpeinit.exe"
+    )
+    Start-Process -FilePath $FilePath
+    #Write-host "Initializing..." -ForegroundColor Cyan
+}
+function WriteLog($LogText){ 
+    Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
+}
+function Get-DeviceInfo {
+    $Computersystem = Get-WmiObject -ClassName win32_computersystem
+    $Bios = Get-WmiObject -ClassName win32_bios
+    $Time = Get-Date
+    $SerialNumber = $bios.SerialNumber
+    $Manufacturer = $computersystem.Manufacturer
+    $SystemFamily = $computersystem.SystemFamily
+    $Battery = Get-CimInstance win32_battery
+    if($Battery){
+        $BatteryStatus = ((($Battery).EstimatedChargeRemaining).ToString())+"%"
+    }
+    #If Lenovo device only return first 4 characters of model name which is the model type; otherwise return full device model
+    if($Manufacturer -eq "LENOVO"){
+        $model = ($computersystem.Model).SubString(0,4)
+    } else {
+        $model = $computersystem.Model
+    }
+    return $model, $SystemFamily , $Manufacturer , $SerialNumber , $Time , $BatteryStatus
+}
+
 function Get-USBDrive(){
     $USBDriveLetter = (Get-Volume | Where-Object {$_.DriveType -eq 'Removable' -and $_.FileSystemType -eq 'NTFS'}).DriveLetter
+    $VirtualDrive = 
     if ($null -eq $USBDriveLetter){
         #Must be using a fixed USB drive - difficult to grab drive letter from win32_diskdrive. Assume user followed instructions and used Deploy as the friendly name for partition
         $USBDriveLetter = (Get-Volume | Where-Object {$_.DriveType -eq 'Fixed' -and $_.FileSystemType -eq 'NTFS' -and $_.FileSystemLabel -eq 'Deploy'}).DriveLetter
@@ -14,43 +50,55 @@ function Get-USBDrive(){
     return $USBDriveLetter
 }
 
-function Get-HardDrive(){
-    $SystemInfo = Get-WmiObject -Class 'Win32_ComputerSystem'
-    $Manufacturer = $SystemInfo.Manufacturer
-    $Model = $SystemInfo.Model
-    WriteLog "Device Manufacturer: $Manufacturer"
-    WriteLog "Device Model: $Model"
-    WriteLog 'Getting Hard Drive info'
-    if ($Manufacturer -eq 'Microsoft Corporation' -and $Model -eq 'Virtual Machine'){
-        WriteLog 'Running in a Hyper-V VM. Getting virtual disk on Index 0 and SCSILogicalUnit 0'
-        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' `
-        -and $_.Model -eq 'Microsoft Virtual Disk' `
-        -and $_.Index -eq 0 `
-        -and $_.SCSILogicalUnit -eq 0
+function Get-HardDrive {
+    $Drives = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media'}
+    $DrivesCount = ($drives | Measure-Object).Count
+    $DeviceID = $Drives.DeviceID
+    $Model = $Drives.Model
+   
+    if ($drivesCount -lt 1) {
+        Write-Host "No hard drives found."
+        $DriveDetected = "No"
+        return $DriveDetected
+    }
+    if ($drivesCount -eq 1) {
+        $DriveDetected = "Yes" 
+        #Write-Host "Only one drive found: $($drives.Model)"
+        return $Model, $DeviceID
+    }
+    if($DrivesCount -gt 1){
+    $Drivelist = @()
+    #$Drivelist.clear()
+       for($i=0;$i -le $DrivesCount -1;$i++){
+        $DriveModel = $Drives[$i].Model
+        $DriveDeviceId = $Drives[$i].DeviceId
+        $Drivesize = (($Drives[$i].Size) / 1GB).ToString('N2') + " GB"
+	    $Properties = [ordered]@{Number = $i + 1  ; Model = $DriveModel ; DeviceId = $DriveDeviceId ; Size = $Drivesize } 
+
+        #$Properties.Clear()
+        $Drivelist += New-Object PSObject -Property $Properties
+    }
+    do {
+        try {
+            $var = $true
+            Write-Host "`nAvailable Drives:"
+            $Drivelist | Format-Table -AutoSize -Property Number, Model, DeviceId, Size | Out-Host
+            [int]$DriveSelected = Read-Host 'Enter the drive number to use'
+            $DriveSelected = $DriveSelected -1
         }
-    }
-    else{
-        WriteLog 'Not running in a VM. Getting physical disk drive'
-        $DiskDrive = Get-WmiObject -Class 'Win32_DiskDrive' | Where-Object {$_.MediaType -eq 'Fixed hard disk media' -and $_.Model -ne 'Microsoft Virtual Disk'}
-    }
-    $DeviceID = $DiskDrive.DeviceID
-    $BytesPerSector = $Diskdrive.BytesPerSector
 
-    # Create a custom object to return both values
-    $result = New-Object PSObject -Property @{
-        DeviceID = $DeviceID
-        BytesPerSector = $BytesPerSector
-    }
+        catch {
+            Write-Host 'Input was not in correct format. Please enter a valid FFU number'
+            $var = $false
+        }
+    } until (($DriveSelected -le $DrivesCount -1) -and $var) 
+    $SelectedDeviceID = $Drivelist[$DriveSelected].DeviceId
+    $SelectedModel = $Drivelist[$DriveSelected].Model
+    return $SelectedModel, $SelectedDeviceID
 
-    return $result
-}
-
-function WriteLog($LogText){ 
-    Add-Content -path $LogFile -value "$((Get-Date).ToString()) $LogText"
-}
-
-function Set-DiskpartAnswerFiles($DiskpartFile,$DiskID){
-    (Get-Content $DiskpartFile).Replace('disk 0', "disk $DiskID") | Set-Content -Path $DiskpartFile
+    #WriteLog "$DriveSelectedModel was selected"
+    }    
+    
 }
 
 function Set-Computername($computername){
@@ -120,49 +168,77 @@ function Invoke-Process {
 		Remove-Item -Path $stdOutTempFile, $stdErrTempFile -Force -ErrorAction Ignore
 		
 	}
-	
 }
 
+function Color ($bc,$fc) {
+$Console = (Get-Host).UI.RawUI
+$Console.BackgroundColor = $bc
+$Console.ForegroundColor = $fc ; cls}
+
+#Start Wpeinit to detect hardware
+Start-Wpeinit
 #Get USB Drive and create log file
 $LogFileName = 'ScriptLog.txt'
 $USBDrive = Get-USBDrive
 New-item -Path $USBDrive -Name $LogFileName -ItemType "file" -Force | Out-Null
 $LogFile = $USBDrive + $LogFilename
-$version = '2409.1'
 WriteLog 'Begin Logging'
-WriteLog "Script version: $version"
-
-#Find PhysicalDrive
-# $PhysicalDeviceID = Get-HardDrive
-$hardDrive = Get-HardDrive
-if($hardDrive -eq $null){
-    WriteLog 'No hard drive found. Exiting'
-    WriteLog 'Try adding storage drivers to the PE boot image (you can re-create your FFU and USB drive and add the PE drivers to the PEDrivers folder and add -CopyPEDrivers $true to the command line, or manually add them via DISM)'
-    Exit
-}
-$PhysicalDeviceID = $hardDrive.DeviceID
-$BytesPerSector = $hardDrive.BytesPerSector
-WriteLog "Physical BytesPerSector is $BytesPerSector"
-WriteLog "Physical DeviceID is $PhysicalDeviceID"
-
-#Parse DiskID Number
-$DiskID = $PhysicalDeviceID.substring($PhysicalDeviceID.length - 1,1)
-WriteLog "DiskID is $DiskID"
-
+#retrieve device info
+$Devicemodel, $SystemFamily , $Manufacturer , $SerialNumber , $time , $BatteryLevel = Get-DeviceInfo
 #Find FFU Files
-[array]$FFUFiles = @(Get-ChildItem -Path $USBDrive*.ffu)
+$CurrentDate = Get-date
+$imageValidday = $CurrentDate.AddDays(-60)
+$imageagelimit = ($CurrentDate - $imageValidday).Days
+$ImagesFolder = $USBDrive + "Images\"
+[array]$FFUFiles = @(Get-ChildItem -Path $ImagesFolder*.ffu) | Where-object {$_.LastWriteTime -gt $imageValidday}
 $FFUCount = $FFUFiles.Count
-
 #If multiple FFUs found, ask which to install
-If ($FFUCount -gt 1) {
+#If ($FFUCount -gt 1) {
     WriteLog "Found $FFUCount FFU Files"
-    $array = @()
-
-    for($i=0;$i -le $FFUCount -1;$i++){
-        $Properties = [ordered]@{Number = $i + 1 ; FFUFile = $FFUFiles[$i].FullName}
-        $array += New-Object PSObject -Property $Properties
+    Write-Host "Device Information:"
+    Write-Host "System Time: " -NoNewline -ForegroundColor Cyan
+    Write-Host $time
+    Write-Host "Serial Number: " -NoNewline -ForegroundColor Cyan
+    Write-Host $SerialNumber
+    Write-Host "Model: " -NoNewline -ForegroundColor Cyan
+    Write-Host $Devicemodel
+    Write-Host "System Family: " -NoNewline -ForegroundColor Cyan
+    Write-Host  $SystemFamily
+    Write-Host "Manufacturer: " -NoNewline -ForegroundColor Cyan
+    Write-Host  $Manufacturer
+    if($BatteryLevel){
+    Write-Host "Current Charge level: " -NoNewline -ForegroundColor Cyan
+    Write-Host  $BatteryLevel}
+    $Model, $DeviceID = Get-HardDrive
+    #Detect PhysicalDrive
+    WriteLog "Main drive detected: $Model"
+    WriteLog "Main drive Name: $Model"
+    WriteLog "Physical DeviceID is $DeviceID"
+    if($model -eq "no"){
+    Write-Output "No drive detected!"
+    Color -bc red -fc Black
+    } else {
+    Write-Host "Drive Detected: " -NoNewline -ForegroundColor Cyan
+    Write-Host $Model`n 
     }
-    $array | Format-Table -AutoSize -Property Number, FFUFile
+    
+    Write-Host "FFU images last updated more than $imageagelimit days ago will not be shown in the list below"`n
+        If ($FFUFiles) {
+    WriteLog "Device information Shown"
+    $imagelist = @()
+    #Show list of valid Images
+    for($i=0;$i -le $FFUCount -1;$i++){
+        $lastWriteTime = $FFUFiles[$i].LastWriteTime
+        $LastUpdatedDays = ($CurrentDate - $lastWriteTime).Days
+        $UpdatedDaysAgo = "$LastUpdatedDays" + " days ago"
+	    $Properties = [ordered]@{Number = $i + 1  ; FFUFile = $FFUFiles[$i].FullName ; LastUpdated = $UpdatedDaysAgo } 
+
+        #$Properties.Clear()
+        $imagelist += New-Object PSObject -Property $Properties
+
+    }
+    $imagelist | Format-Table -AutoSize -Property Number, FFUFile, LastUpdated
+
     do {
         try {
             $var = $true
@@ -176,17 +252,14 @@ If ($FFUCount -gt 1) {
         }
     } until (($FFUSelected -le $FFUCount -1) -and $var) 
 
-    $FFUFileToInstall = $array[$FFUSelected].FFUFile
+    $FFUFileToInstall = $imagelist[$FFUSelected].FFUFile
+    
     WriteLog "$FFUFileToInstall was selected"
 }
-elseif ($FFUCount -eq 1) {
-    WriteLog "Found $FFUCount FFU File"
-    $FFUFileToInstall = $FFUFiles[0].FullName
-    WriteLog "$FFUFileToInstall will be installed"
-} 
 else {
     Writelog 'No FFU files found'
-    Write-Host 'No FFU files found'
+    Write-Host 'No FFU files found. Please check the system time.'`n
+    Pause
     Exit
 }
 
@@ -199,8 +272,6 @@ If (Test-Path -Path $APFolder){
     $autopilot = $true
     }
 }
-
-
 #FindPPKG
 $PPKGFolder = $USBDrive + "PPKG\"
 if (Test-Path -Path $PPKGFolder){
@@ -263,7 +334,7 @@ if ($Unattend -and $UnattendPrefix){
     #Get serial number to append. This can make names longer than 15 characters. Trim any leading or trailing whitespace
     $serial = (Get-CimInstance -ClassName win32_bios).SerialNumber.Trim()
     #Combine prefix with serial
-    $computername = ($PrefixToUse + $serial) -replace "\s","" # Remove spaces because windows does not support spaces in the computer names
+    $computername = $PrefixToUse + $serial
     #If computername is longer than 15 characters, reduce to 15. Sysprep/unattend doesn't like ComputerName being longer than 15 characters even though Windows accepts it
     If ($computername.Length -gt 15){
        $computername = $computername.substring(0,15)
@@ -376,55 +447,16 @@ else {
     Writelog 'No PPKG files found or PPKG not selected.'
 }
 
-#Find Drivers
-$Drivers = $USBDrive + "Drivers"
-If (Test-Path -Path $Drivers)
-{
-    #Check if multiple driver folders found, if so, just select one folder to save time/space
-    $DriverFolders = Get-ChildItem -Path $Drivers -directory
-    $DriverFoldersCount = $DriverFolders.count
-    If ($DriverFoldersCount -gt 1)
-    {
-        WriteLog "Found $DriverFoldersCount driver folders"
-        $array = @()
-
-        for($i=0; $i -le $DriverFoldersCount -1; $i++){
-        $Properties = [ordered]@{Number = $i + 1; Drivers = $DriverFolders[$i].FullName}
-        $array += New-Object PSObject -Property $Properties
-        }
-    $array | Format-Table -AutoSize -Property Number, Drivers
-    do {
-        try {
-            $var = $true
-            [int]$DriversSelected = Read-Host 'Enter the set of drivers to install'
-            $DriversSelected = $DriversSelected - 1
-        }
-
-        catch {
-            Write-Host 'Input was not in correct format. Please enter a valid driver folder number'
-            $var = $false
-        }
-    } until (($DriversSelected -le $DriverFoldersCount -1) -and $var) 
-
-    $Drivers = $array[$DriversSelected].Drivers
-    WriteLog "$Drivers was selected"
-    }
-    elseif ($DriverFoldersCount -eq 1) {
-        WriteLog "Found $DriverFoldersCount driver folder"
-        $Drivers = $DriverFolders.FullName
-        WriteLog "$Drivers will be installed"
-    } 
-    else {
-        Writelog 'No driver folders found'
-    }
-}
 #Partition drive
 Writelog 'Clean Disk'
+#Start-Process -FilePath diskpart.exe -ArgumentList "/S $UEFIFFUPartitions" -Wait -ErrorAction Stop | Out-File $Logfile -Append
+#Invoke-Process diskpart.exe "/S $UEFIFFUPartitions"
+#Parse DiskID Number
+$DiskID = $DeviceID.substring($DeviceID.length - 1,1)
+WriteLog "DiskID is $DiskID"
 try {
     $Disk = Get-Disk -Number $DiskID
-    if ($Disk.PartitionStyle -ne "RAW") {
-        $Disk | clear-disk -RemoveData -RemoveOEM -Confirm:$false
-    }
+    $Disk | Clear-Disk -RemoveData -RemoveOEM -Confirm:$false
 }
 catch {
     WriteLog 'Cleaning disk failed. Exiting'
@@ -434,38 +466,18 @@ catch {
 Writelog 'Cleaning Disk succeeded'
 
 #Apply FFU
-WriteLog "Applying FFU to $PhysicalDeviceID"
-WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID"
+WriteLog "Applying FFU to $DriveId"
+WriteLog "Running command dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$DeviceID"
 #In order for Applying Image progress bar to show up, need to call dism directly. Might be a better way to handle, but must have progress bar show up on screen.
-dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$PhysicalDeviceID
-$recoveryPartition = Get-Partition -Disk $Disk | Where-Object PartitionNumber -eq 4
-if ($recoveryPartition) {
-    WriteLog 'Setting recovery partition attributes'
-    $diskpartScript = @(
-        "SELECT DISK $($Disk.Number)", 
-        "SELECT PARTITION $($recoveryPartition.PartitionNumber)", 
-        "GPT ATTRIBUTES=0x8000000000000001", 
-        "EXIT"
-    )
-    $diskpartScript | diskpart.exe | Out-Null
-    WriteLog 'Setting recovery partition attributes complete'
-}
+dism /apply-ffu /ImageFile:$FFUFileToInstall /ApplyDrive:$DeviceID
+WriteLog "Waiting for C drive to be initialized"
+while (!(Test-Path "C:\")) {
+    Set-partition -DiskNumber 0 -PartitionNumber 3 -NewDriveLetter C -ErrorAction SilentlyContinue
+    Start-Sleep -Seconds 1
+    }
+WriteLog "C: drive now initialized."
 if($LASTEXITCODE -eq 0){
     WriteLog 'Successfully applied FFU'
-}
-elseif($LASTEXITCODE -eq 1393){
-    WriteLog "Failed to apply FFU - LastExitCode = $LastExitCode"
-    WriteLog "This is likely due to a mismatched LogicalSectorByteSize"
-    WriteLog "BytesPerSector value from Win32_Diskdrive is $BytesPerSector"
-    if ($BytesPerSector -eq 4096){
-        WriteLog "The FFU build process by default uses a 512 LogicalSectorByteSize. Rebuild the FFU by adding -LogicalSectorByteSize 4096 to the command line"
-    }
-    elseif($BytesPerSector -eq 512){
-        WriteLog "This FFU was likely built with a LogicalSectorByteSize of 4096. Rebuild the FFU by adding -LogicalSectorByteSize 512 to the command line"
-    }
-    #Copy DISM log to USBDrive
-    invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
-    exit
 }
 else{
     Writelog "Failed to apply FFU - LastExitCode = $LASTEXITCODE also check dism.log on the USB drive for more info"
@@ -473,21 +485,7 @@ else{
     invoke-process xcopy.exe "X:\Windows\logs\dism\dism.log $USBDrive /Y"
     exit
 }
-Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object PartitionNumber -eq 3 | Set-Partition -NewDriveLetter W
 
-#Copy modified WinRE if folder exists, else copy inbox WinRE
-$WinRE = $USBDrive + "WinRE\winre.wim"
-If (Test-Path -Path $WinRE)
-{
-    WriteLog 'Copying modified WinRE to Recovery directory'
-    Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object Type -eq Recovery | Set-Partition -NewDriveLetter R
-    Invoke-Process xcopy.exe "/h $WinRE R:\Recovery\WindowsRE\ /Y"
-    WriteLog 'Copying WinRE to Recovery directory succeeded'
-    WriteLog 'Registering location of recovery tools'
-    Invoke-Process W:\Windows\System32\Reagentc.exe "/Setreimage /Path R:\Recovery\WindowsRE /Target W:\Windows"
-    Get-Disk | Where-Object Number -eq $DiskID | Get-Partition | Where-Object Type -eq Recovery | Remove-PartitionAccessPath -AccessPath R:
-    WriteLog 'Registering location of recovery tools succeeded'
-}
 #Autopilot JSON
 If ($APFileToInstall){
     WriteLog "Copying $APFileToInstall to W:\windows\provisioning\autopilot"
@@ -522,7 +520,7 @@ If ($PPKGFileToInstall){
     }
 }
 #Set DeviceName
-If ($computername){
+If ($PrefixToUse){
     try{
         $PantherDir = 'w:\windows\panther'
         If (Test-Path -Path $PantherDir){
@@ -543,28 +541,23 @@ If ($computername){
         throw $_
     }   
 }
+$DriversPath = $USBDrive + "Drivers\" + $Devicemodel
+$DriversAvailable = test-path -Path $DriversPath -ErrorAction SilentlyContinue
 
-#Add Drivers
-#Some drivers can sometimes fail to copy and dism ends up with a non-zero error code. Invoke-process will throw and terminate in these instances. 
-If (Test-Path -Path $Drivers)
-{
-    WriteLog 'Copying drivers'
-    Write-Warning 'Copying Drivers - dism will pop a window with no progress. This can take a few minutes to complete. This is done so drivers are logged to the scriptlog.txt file. Please be patient.'
-    Invoke-process dism.exe "/image:W:\ /Add-Driver /Driver:""$Drivers"" /Recurse"
-    WriteLog 'Copying drivers succeeded'
-}
+If ($DriversAvailable){
+    WriteLog "Applying drivers: $SystemFamily"
+    Dism /Image:C: /Add-Driver /Driver:"$DriversPath" /Recurse 
+    #pause
+    Wpeutil reboot
 
-WriteLog "Setting Windows Boot Manager to be first in the display order."
-Invoke-Process bcdedit.exe "/set {fwbootmgr} displayorder {bootmgr} /addfirst"
-WriteLog "Windows Boot Manager has been set to be first in the display order."
-WriteLog "Setting default Windows boot loader to be first in the display order."
-Invoke-Process bcdedit.exe "/set {bootmgr} displayorder {default} /addfirst"
-WriteLog "The default Windows boot loader has been set to be first in the display order."
+}else{
+    WriteLog "No drivers for this model found for $SystemFamily at path $DriversPath"
+    Write-Host "No drivers for this model found for $SystemFamily at path $DriversPath"
+    Pause
+    Wpeutil reboot
+    }
+
 #Copy DISM log to USBDrive
 WriteLog "Copying dism log to $USBDrive"
 invoke-process xcopy "X:\Windows\logs\dism\dism.log $USBDrive /Y" 
 WriteLog "Copying dism log to $USBDrive succeeded"
-
-
-
-
